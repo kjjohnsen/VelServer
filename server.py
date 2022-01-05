@@ -72,9 +72,9 @@ def leave_room(client, clientDisconnected=False):
     except Exception as e: 
         print("not in room")
     rooms_lock.release()
-    send_room_message(client.room, f"2:{client.id}:\n") #client not in the room anymore
+    send_room_message(client.room, f"2:{client.id}::\n") #client not in the room anymore
     if not clientDisconnected:
-        send_client_message(client,f"2:{client.id}:\n") #so send again to them
+        send_client_message(client,f"2:{client.id}::\n") #so send again to them
     else:
         client_lock.acquire()
         del client_dict[client.id] #remove the client from the list of clients...
@@ -137,12 +137,12 @@ def decode_message(client,message):
                 
                 client.room = roomName #client joins the new room
                 #send a message to the clients new room that they joined!
-                send_room_message(roomName, f"2:{client.id}:{client.room}\n")
+                send_room_message(roomName, f"2:{client.id}:{client.room}:{client.username}\n")
                 
                 
                 for c in current_clients: #tell that client about all the other clients in the room
                     if c.id != client.id:
-                        send_client_message(client,f"2:{c.id}:{client.room}\n")
+                        send_client_message(client,f"2:{c.id}:{client.room}:{client.username}\n")
                 
                 send_client_message(client, f"4:{masterId}\n") #tell the client who the master is
             
