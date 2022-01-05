@@ -224,17 +224,21 @@ def client_write_thread(conn, addr, client):
 
 def send_udp_room_message(socket, client, data, exclude_client = False):
 
-    room = client.room
+    
+    room = rooms[client.room]
+
     clients = room.clients
     for c in clients:
         if c == client and exclude_client:
             continue
         if c.udp_port == 0:
+            print(c.udp_port)
             continue
         try:
+            
             socket.sendto(data, (c.ip, c.udp_port))
-        except:
-            pass #didn't work for some reason!
+        except Exception as e:
+            print(e)
 
     
 
@@ -243,7 +247,7 @@ def udp_listen_thread(): #for voice packets, which do not need to be ordered
         s.bind(('', PORT))
         while True:
             data, addr = s.recvfrom(1024)
-
+            
             #we will have two types of messages, one that 
             if data:
                 decoded = data.decode('utf-8')
@@ -252,18 +256,22 @@ def udp_listen_thread(): #for voice packets, which do not need to be ordered
                 if len(decoded) > 1:
                     #get the client id 
                     client_id = int(decoded[0])
-
+                    print("got data from " + str(client_id))
                     try:
                         client = client_dict[client_id] 
-                        ip,port = addr.getpeername()
-                        if client.ip == ip:
-                            #we have a valid client
-                            client.udp_port = port
-                            #send the message to everyone else in the room 
-                            send_udp_room_message(s, client, data,True)
 
-                    except:
-                        pass
+                        if client.ip == addr[0]:
+                            #we have a valid client
+                            client.udp_port = addr[1]
+                            print("sending data back to " + str(client.udp_port) + "," + client.ip)
+                            
+                            if client.room == '':
+                                s.sendto(data, (client.ip, client.udp_port)) # echo back, not in room
+                            else:
+                                send_udp_room_message(s, client, data,True) # send to others
+
+                    except Exception as e:
+                        print(e)
 
 def tcp_listen():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -277,7 +285,7 @@ def tcp_listen():
 
             c, addr = sock.accept() #blocks until a connection is made
             c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            ip,port = addr.getpeername()
+            ip,port = c.getpeername()
             client = types.SimpleNamespace(id=next_client_id, 
                                             alive=True, 
                                             message_queue=[],
