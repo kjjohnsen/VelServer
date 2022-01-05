@@ -222,6 +222,7 @@ def client_write_thread(conn, addr, client):
         client.message_ready.clear()
     client.write_thread_dead = True
 
+#data is a byte array in this case
 def send_udp_room_message(socket, client, data, exclude_client = False):
 
     
@@ -236,13 +237,18 @@ def send_udp_room_message(socket, client, data, exclude_client = False):
             continue
         try:
             
-            socket.sendto(data, (c.ip, c.udp_port))
+            socket.sendto(data.encode('utf-8'), (c.ip, c.udp_port))
         except Exception as e:
             print(e)
 
+def send_udp_group_message(socket, group, message):
     
+    for client_id in group:
+        if client_id in client_dict:
+            client = client_dict[client_id] 
+            socket.sendto(message.encode('utf-8'), (client.ip, client.udp_port))    
 
-def udp_listen_thread(): #for voice packets, which do not need to be ordered
+def udp_listen_thread(): 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind(('', PORT))
         while True:
@@ -252,26 +258,41 @@ def udp_listen_thread(): #for voice packets, which do not need to be ordered
             if data:
                 decoded = data.decode('utf-8')
                 #split the decoded string into a list of comma-delimited strings
-                decoded = decoded.split(',')
+                decoded = decoded.split(':')
                 if len(decoded) > 1:
-                    #get the client id 
-                    client_id = int(decoded[0])
-                    print("got data from " + str(client_id))
+                    
                     try:
+                        client_id = int(decoded[0])
+                        message_type = decoded[1]
                         client = client_dict[client_id] 
-
-                        if client.ip == addr[0]:
-                            #we have a valid client
-                            client.udp_port = addr[1]
-                            print("sending data back to " + str(client.udp_port) + "," + client.ip)
+                        if message_type == '0': #essentially a UDP-connect message
+                            #get the client id 
+                            print("got connect from " + str(client_id))
                             
-                            if client.room == '':
-                                s.sendto(data, (client.ip, client.udp_port)) # echo back, not in room
+                            if client.ip == addr[0]:
+                                #we have a valid client
+                                client.udp_port = addr[1]
+                                s.sendto(f'0:{client.id}:connected'.encode('utf-8'), addr)
+                        if message_type == '3': #a broadcast message, but this is a little different from earlier
+                            subtype = decoded[2]
+                            new_message = f'3:{client_id}:{decoded[3]}'
+                            if subtype == '0': #broadcast to everyone in the room
+                                send_udp_room_message(s, client, new_message, True)
+                            elif subtype == '1': #broadcast to everyone in the room, but not the client who sent it
+                                send_udp_room_message(s, client, new_message, False)
+                        if message_type == '4': #send to a group
+                            groupName = decoded[2] 
+                            
+                            if groupName in client.groups:
+                                group = client.groups[groupName]
+                                
+                                new_message = f'3:{client_id}:{decoded[3]}'
+                                send_udp_group_message(s, group, new_message)
                             else:
-                                send_udp_room_message(s, client, data,True) # send to others
+                                print("no group "+groupName)
 
                     except Exception as e:
-                        print(e)
+                        print("Exception: " + str(e))
 
 def tcp_listen():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
