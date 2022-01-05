@@ -171,6 +171,8 @@ def decode_message(client,message):
                 except: pass
             client.groups[decodedMessage[1]] = group_clients
             print("got new group: " + str(client.groups))
+
+                
         
 def client_read_thread(conn, addr, client):
     global rooms
@@ -220,35 +222,90 @@ def client_write_thread(conn, addr, client):
         client.message_ready.clear()
     client.write_thread_dead = True
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-   
-    sock.bind((HOST, PORT))
-    sock.listen()
-    next_client_id = 0
-    while True:
+def send_udp_room_message(socket, client, data, exclude_client = False):
 
-        c, addr = sock.accept() #blocks until a connection is made
-        c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        client = types.SimpleNamespace(id=next_client_id, 
-                                        alive=True, 
-                                        message_queue=[],
-                                        message_lock=threading.Lock(), 
-                                        inb='', #read buffer
-                                        message_ready=threading.Event(),
-                                        logged_in=False,
-                                        username='',
-                                        room='',
-                                        groups={}, # a dictionary of groups that you may send to.  groups are lists of user ids
-                                        write_thread_dead=False
-                                        )
-        client_lock.acquire()
-        client_dict[next_client_id] = client
-        client_lock.release()
+    room = client.room
+    clients = room.clients
+    for c in clients:
+        if c == client and exclude_client:
+            continue
+        if c.udp_port == 0:
+            continue
+        try:
+            socket.sendto(data, (c.ip, c.udp_port))
+        except:
+            pass #didn't work for some reason!
 
-        next_client_id += 1
-        
-        start_new_thread(client_read_thread, (c, addr, client))
-        start_new_thread(client_write_thread, (c, addr, client))
+    
+
+def udp_listen_thread(): #for voice packets, which do not need to be ordered
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(('', PORT))
+        while True:
+            data, addr = s.recvfrom(1024)
+
+            #we will have two types of messages, one that 
+            if data:
+                decoded = data.decode('utf-8')
+                #split the decoded string into a list of comma-delimited strings
+                decoded = decoded.split(',')
+                if len(decoded) > 1:
+                    #get the client id 
+                    client_id = int(decoded[0])
+
+                    try:
+                        client = client_dict[client_id] 
+                        ip,port = addr.getpeername()
+                        if client.ip == ip:
+                            #we have a valid client
+                            client.udp_port = port
+                            #send the message to everyone else in the room 
+                            send_udp_room_message(s, client, data,True)
+
+                    except:
+                        pass
+
+def tcp_listen():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+        sock.bind((HOST, PORT))
+        sock.listen()
+        next_client_id = 0
+
+        while True:
+
+            c, addr = sock.accept() #blocks until a connection is made
+            c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            ip,port = addr.getpeername()
+            client = types.SimpleNamespace(id=next_client_id, 
+                                            alive=True, 
+                                            message_queue=[],
+                                            message_lock=threading.Lock(), 
+                                            inb='', #read buffer
+                                            message_ready=threading.Event(),
+                                            logged_in=False,
+                                            username='',
+                                            room='',
+                                            groups={}, # a dictionary of groups that you may send to.  groups are lists of user ids
+                                            write_thread_dead=False,
+                                            udp_port = 0, #will be used by udp
+                                            ip = ip
+                                            )
+            client_lock.acquire()
+            client_dict[next_client_id] = client
+            client_lock.release()
+
+            next_client_id += 1
+            
+            start_new_thread(client_read_thread, (c, addr, client))
+            start_new_thread(client_write_thread, (c, addr, client))
+
+start_new_thread(udp_listen_thread,())  #this will handle udp connections, which must specify a client_id to have things routed correctly
+tcp_listen() #this will handle tcp connections, which provide critical data to the applications
+
+
+
+
 
 
