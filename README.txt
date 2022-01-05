@@ -1,4 +1,4 @@
-This is a text-based server. 
+This is a text-based server using TCP.  It is multi-threaded, with 2 threads per connected user for read and writing.  It is very easy to deply on any server that has python3.
 
 INCOMING MESSSAGES (sent by clients)
 
