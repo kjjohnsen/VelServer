@@ -113,7 +113,7 @@ def decode_message(client,message):
             elif (roomName == '-1') and client.room != '': #can't leave a room if you aren't in one
                 #leave the room
                 leave_room(client)
-            elif roomName != '': #join or create the room
+            elif (roomName != '-1') and (roomName != '') : #join or create the room
                 
                 
                 if client.room != '':
